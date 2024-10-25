@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 @UIApplicationMain
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate {
   var flutterResult: FlutterResult?
   var directoryPath: URL!
 
@@ -12,6 +12,10 @@ import UniformTypeIdentifiers
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
+
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      fatalError("rootViewController is not of type FlutterViewController")
+    }
 
     let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.binaryMessenger)
     methodChannel.setMethodCallHandler { (call, result) in
