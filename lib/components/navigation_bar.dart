@@ -23,14 +23,14 @@ class PaneActionEntry {
 }
 
 class NaviPane extends StatefulWidget {
-  const NaviPane(
-      {required this.paneItems,
-      required this.paneActions,
-      required this.pageBuilder,
-      this.initialPage = 0,
-      this.onPageChange,
-      required this.observer,
-      super.key});
+  const NaviPane({required this.paneItems,
+    required this.paneActions,
+    required this.pageBuilder,
+    this.initialPage = 0,
+    this.onPageChange,
+    required this.observer,
+    required this.navigatorKey,
+    super.key});
 
   final List<PaneItemEntry> paneItems;
 
@@ -43,6 +43,8 @@ class NaviPane extends StatefulWidget {
   final int initialPage;
 
   final NaviObserver observer;
+
+  final GlobalKey<NavigatorState> navigatorKey;
 
   @override
   State<NaviPane> createState() => _NaviPaneState();
@@ -60,6 +62,8 @@ class _NaviPaneState extends State<NaviPane>
     widget.onPageChange?.call(value);
   }
 
+  void Function()? mainViewUpdateHandler;
+
   late AnimationController controller;
 
   static const _kBottomBarHeight = 58.0;
@@ -71,10 +75,23 @@ class _NaviPaneState extends State<NaviPane>
   static const _kTopBarHeight = 48.0;
 
   double get bottomBarHeight =>
-      _kBottomBarHeight + MediaQuery.of(context).padding.bottom;
+      _kBottomBarHeight + MediaQuery
+          .of(context)
+          .padding
+          .bottom;
 
   void onNavigatorStateChange() {
     onRebuild(context);
+  }
+
+  void updatePage(int index) {
+    if (widget.observer.routes.length > 1) {
+      widget.navigatorKey.currentState!.popUntil((route) => route.isFirst);
+    }
+    setState(() {
+      currentPage = index;
+    });
+    mainViewUpdateHandler?.call();
   }
 
   @override
@@ -86,24 +103,22 @@ class _NaviPaneState extends State<NaviPane>
       vsync: this,
     );
     widget.observer.addListener(onNavigatorStateChange);
-    StateController.put(NaviPaddingWidgetController());
     super.initState();
   }
 
   @override
   void dispose() {
-    StateController.remove<NaviPaddingWidgetController>();
     controller.dispose();
     widget.observer.removeListener(onNavigatorStateChange);
     super.dispose();
   }
 
   double targetFormContext(BuildContext context) {
-    var width = MediaQuery.of(context).size.width;
+    var width = MediaQuery
+        .of(context)
+        .size
+        .width;
     double target = 0;
-    if (widget.observer.pageCount > 1) {
-      target = 1;
-    }
     if (width > changePoint) {
       target = 2;
     }
@@ -125,19 +140,7 @@ class _NaviPaneState extends State<NaviPane>
           controller.stop();
         }
       }
-      if (target == 1) {
-        StateController.find<NaviPaddingWidgetController>()
-            .setWithPadding(true, true, true);
-        controller.value = target;
-      } else if (controller.value == 1 && target == 0) {
-        StateController.findOrNull<NaviPaddingWidgetController>()
-            ?.setWithPadding(false, false, false);
-        controller.value = target;
-      } else {
-        StateController.findOrNull<NaviPaddingWidgetController>()
-            ?.setWithPadding(false, false, false);
-        controller.animateTo(target);
-      }
+      controller.animateTo(target);
       animationTarget = target;
     }
   }
@@ -160,46 +163,42 @@ class _NaviPaneState extends State<NaviPane>
           final value = controller.value;
           return Stack(
             children: [
-              if (value <= 1)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomBarHeight * (0 - value),
-                  child: buildBottom(),
-                ),
-              if (value <= 1)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: _kTopBarHeight * (0 - value) +
-                      MediaQuery.of(context).padding.top * (1 - value),
-                  child: buildTop(),
-                ),
               Positioned(
                 left: _kFoldedSideBarWidth * ((value - 2.0).clamp(-1.0, 0.0)),
                 top: 0,
                 bottom: 0,
                 child: buildLeft(),
               ),
-              Positioned(
-                top: _kTopBarHeight * ((1 - value).clamp(0, 1)) +
-                    MediaQuery.of(context).padding.top * (value == 0 ? 1 : 0),
+              Positioned.fill(
                 left: _kFoldedSideBarWidth * ((value - 1).clamp(0, 1)) +
                     (_kSideBarWidth - _kFoldedSideBarWidth) *
                         ((value - 2).clamp(0, 1)),
-                right: 0,
-                bottom: bottomBarHeight * ((1 - value).clamp(0, 1)),
-                child: MediaQuery.removePadding(
-                  removeTop: value == 0,
-                  context: context,
-                  child: Material(child: widget.pageBuilder(currentPage)),
-                ),
+                child: buildMainView(),
               ),
             ],
           );
         },
       ),
     );
+  }
+
+  Widget buildMainView() {
+    return Navigator(
+      observers: [widget.observer],
+      key: widget.navigatorKey,
+      onGenerateRoute: (settings) =>
+          AppPageRoute(
+            preventRebuild: false,
+            isRootRoute: true,
+            builder: (context) {
+              return _NaviMainView(state: this);
+            },
+          ),
+    );
+  }
+
+  Widget buildMainViewContent() {
+    return widget.pageBuilder(currentPage);
   }
 
   Widget buildTop() {
@@ -231,35 +230,39 @@ class _NaviPaneState extends State<NaviPane>
 
   Widget buildBottom() {
     return Material(
-      textStyle: Theme.of(context).textTheme.labelSmall,
+      textStyle: Theme
+          .of(context)
+          .textTheme
+          .labelSmall,
       elevation: 0,
       child: Container(
-        height: _kBottomBarHeight + MediaQuery.of(context).padding.bottom,
+        height: _kBottomBarHeight,
         decoration: BoxDecoration(
           border: Border(
             top: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
+              color: Theme
+                  .of(context)
+                  .colorScheme
+                  .outlineVariant,
               width: 1,
             ),
           ),
         ),
-        child: Padding(
-          padding:
-              EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-          child: Row(
-            children: List<Widget>.generate(
-                widget.paneItems.length,
-                (index) => Expanded(
-                        child: _SingleBottomNaviWidget(
-                      enabled: currentPage == index,
-                      entry: widget.paneItems[index],
-                      onTap: () {
-                        setState(() {
-                          currentPage = index;
-                        });
-                      },
-                      key: ValueKey(index),
-                    ))),
+        child: Row(
+          children: List<Widget>.generate(
+            widget.paneItems.length,
+                (index) {
+              return Expanded(
+                child: _SingleBottomNaviWidget(
+                  enabled: currentPage == index,
+                  entry: widget.paneItems[index],
+                  onTap: () {
+                    updatePage(index);
+                  },
+                  key: ValueKey(index),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -278,7 +281,10 @@ class _NaviPaneState extends State<NaviPane>
         decoration: BoxDecoration(
           border: Border(
             right: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
+              color: Theme
+                  .of(context)
+                  .colorScheme
+                  .outlineVariant,
               width: 1,
             ),
           ),
@@ -292,29 +298,32 @@ class _NaviPaneState extends State<NaviPane>
               child: Column(
                 children: [
                   const SizedBox(height: 16),
-                  SizedBox(height: MediaQuery.of(context).padding.top),
+                  SizedBox(height: MediaQuery
+                      .of(context)
+                      .padding
+                      .top),
                   ...List<Widget>.generate(
                     widget.paneItems.length,
-                    (index) => _SideNaviWidget(
-                      enabled: currentPage == index,
-                      entry: widget.paneItems[index],
-                      showTitle: value == 3,
-                      onTap: () {
-                        setState(() {
-                          currentPage = index;
-                        });
-                      },
-                      key: ValueKey(index),
-                    ),
+                        (index) =>
+                        _SideNaviWidget(
+                          enabled: currentPage == index,
+                          entry: widget.paneItems[index],
+                          showTitle: value == 3,
+                          onTap: () {
+                            updatePage(index);
+                          },
+                          key: ValueKey(index),
+                        ),
                   ),
                   const Spacer(),
                   ...List<Widget>.generate(
                     widget.paneActions.length,
-                    (index) => _PaneActionWidget(
-                      entry: widget.paneActions[index],
-                      showTitle: value == 3,
-                      key: ValueKey(index + widget.paneItems.length),
-                    ),
+                        (index) =>
+                        _PaneActionWidget(
+                          entry: widget.paneActions[index],
+                          showTitle: value == 3,
+                          key: ValueKey(index + widget.paneItems.length),
+                        ),
                   ),
                   const SizedBox(
                     height: 16,
@@ -331,12 +340,11 @@ class _NaviPaneState extends State<NaviPane>
 }
 
 class _SideNaviWidget extends StatefulWidget {
-  const _SideNaviWidget(
-      {required this.enabled,
-      required this.entry,
-      required this.onTap,
-      required this.showTitle,
-      super.key});
+  const _SideNaviWidget({required this.enabled,
+    required this.entry,
+    required this.onTap,
+    required this.showTitle,
+    super.key});
 
   final bool enabled;
 
@@ -355,9 +363,11 @@ class _SideNaviWidgetState extends State<_SideNaviWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colorScheme = Theme
+        .of(context)
+        .colorScheme;
     final icon =
-        Icon(widget.enabled ? widget.entry.activeIcon : widget.entry.icon);
+    Icon(widget.enabled ? widget.entry.activeIcon : widget.entry.icon);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (details) => setState(() => isHovering = true),
@@ -375,23 +385,23 @@ class _SideNaviWidgetState extends State<_SideNaviWidget> {
               color: widget.enabled
                   ? colorScheme.primaryContainer
                   : isHovering
-                      ? colorScheme.surfaceContainerHigh
-                      : null,
+                  ? colorScheme.surfaceContainerHigh
+                  : null,
               borderRadius: BorderRadius.circular(8),
             ),
             child: widget.showTitle
                 ? Row(
-                    children: [
-                      icon,
-                      const SizedBox(
-                        width: 12,
-                      ),
-                      Text(widget.entry.label)
-                    ],
-                  )
+              children: [
+                icon,
+                const SizedBox(
+                  width: 12,
+                ),
+                Text(widget.entry.label)
+              ],
+            )
                 : Center(
-                    child: icon,
-                  )),
+              child: icon,
+            )),
       ),
     );
   }
@@ -414,7 +424,9 @@ class _PaneActionWidgetState extends State<_PaneActionWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colorScheme = Theme
+        .of(context)
+        .colorScheme;
     final icon = Icon(widget.entry.icon);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -434,28 +446,27 @@ class _PaneActionWidgetState extends State<_PaneActionWidget> {
                 borderRadius: BorderRadius.circular(8)),
             child: widget.showTitle
                 ? Row(
-                    children: [
-                      icon,
-                      const SizedBox(
-                        width: 12,
-                      ),
-                      Text(widget.entry.label)
-                    ],
-                  )
+              children: [
+                icon,
+                const SizedBox(
+                  width: 12,
+                ),
+                Text(widget.entry.label)
+              ],
+            )
                 : Center(
-                    child: icon,
-                  )),
+              child: icon,
+            )),
       ),
     );
   }
 }
 
 class _SingleBottomNaviWidget extends StatefulWidget {
-  const _SingleBottomNaviWidget(
-      {required this.enabled,
-      required this.entry,
-      required this.onTap,
-      super.key});
+  const _SingleBottomNaviWidget({required this.enabled,
+    required this.entry,
+    required this.onTap,
+    super.key});
 
   final bool enabled;
 
@@ -523,9 +534,11 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
 
   Widget buildContent() {
     final value = controller.value;
-    final colorScheme = Theme.of(context).colorScheme;
+    final colorScheme = Theme
+        .of(context)
+        .colorScheme;
     final icon =
-        Icon(widget.enabled ? widget.entry.activeIcon : widget.entry.icon);
+    Icon(widget.enabled ? widget.entry.activeIcon : widget.entry.icon);
     return Center(
       child: Container(
         width: 64,
@@ -626,12 +639,12 @@ class _NaviPopScope extends StatelessWidget {
     Widget res = App.isIOS
         ? child
         : PopScope(
-            canPop: App.isAndroid ? false : true,
-            onPopInvokedWithResult: (value, result) {
-              action();
-            },
-            child: child,
-          );
+      canPop: App.isAndroid ? false : true,
+      onPopInvokedWithResult: (value, result) {
+        action();
+      },
+      child: child,
+    );
     if (popGesture) {
       res = GestureDetector(
           onPanStart: (details) {
@@ -654,54 +667,45 @@ class _NaviPopScope extends StatelessWidget {
   }
 }
 
-class NaviPaddingWidgetController extends StateController {
-  NaviPaddingWidgetController();
+class _NaviMainView extends StatefulWidget {
+  const _NaviMainView({required this.state});
 
-  bool _withPadding = false;
+  final _NaviPaneState state;
 
-  bool _withTopBarPadding = false;
-
-  bool _withBottomBarPadding = false;
-
-  void setWithPadding(
-      bool withPadding, bool withAppbarPadding, bool withBottomBarPadding) {
-    _withPadding = withPadding;
-    _withTopBarPadding = withAppbarPadding;
-    _withBottomBarPadding = withBottomBarPadding;
-    update();
-  }
+  @override
+  State<_NaviMainView> createState() => _NaviMainViewState();
 }
 
-class NaviPaddingWidget extends StatelessWidget {
-  const NaviPaddingWidget({super.key, required this.child});
+class _NaviMainViewState extends State<_NaviMainView> {
+  _NaviPaneState get state => widget.state;
 
-  final Widget child;
+  @override
+  void initState() {
+    state.mainViewUpdateHandler = () {
+      setState(() {});
+    };
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StateBuilder<NaviPaddingWidgetController>(
-      builder: (controller) {
-        return Padding(
-          padding: controller._withPadding
-              ? EdgeInsets.only(
-                  top: context.padding.top +
-                      (controller._withTopBarPadding
-                          ? _NaviPaneState._kTopBarHeight
-                          : 0),
-                  bottom: context.padding.bottom +
-                      (controller._withBottomBarPadding
-                          ? _NaviPaneState._kBottomBarHeight
-                          : 0),
-                )
-              : EdgeInsets.zero,
+    var shouldShowAppBar = state.controller.value < 2;
+    return Column(
+      children: [
+        if (shouldShowAppBar) state.buildTop().paddingTop(context.padding.top),
+        Expanded(
           child: MediaQuery.removePadding(
-            removeTop: controller._withPadding,
-            removeBottom: controller._withPadding,
             context: context,
-            child: child,
+            removeTop: shouldShowAppBar,
+            child: AnimatedSwitcher(
+              duration: _fastAnimationDuration,
+              child: state.buildMainViewContent(),
+            ),
           ),
-        );
-      },
+        ),
+        if (shouldShowAppBar) state.buildBottom().paddingBottom(
+            context.padding.bottom),
+      ],
     );
   }
 }
